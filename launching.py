@@ -55,8 +55,26 @@ def create_security_group():
     try:
         response = ec2.create_security_group(GroupName='Security Group',
                                              Description='None',
-                                             VpcId=vpc_id)
+                                             VpcId=vpc_id,
+                                             )
         security_group_id = response['GroupId']
+        print(response)
+        response.authorize_ingress(
+            DryRun=False,
+            IpPermissions=[
+                {
+                    'FromPort': 0,
+                    'ToPort': 65535,
+                    'IpProtocol': -1,
+                    'IpRanges': [
+                        {
+                            'CidrIp': '0.0.0.0/0',
+                            'Description': "Flask_authorize"
+                        },
+                    ]
+                }
+            ]
+        )
         print('Security Group Created %s in vpc %s.' %
               (security_group_id, vpc_id))
         print(security_group_id)
