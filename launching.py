@@ -1,5 +1,7 @@
 import boto3
 from botocore.exceptions import ClientError
+temp = open("temp.txt", "w")
+
 
 ec2 = boto3.resource('ec2')
 
@@ -8,15 +10,17 @@ ec2 = boto3.resource('ec2')
 
 def create_key_pair():
     ec2 = boto3.client('ec2')
-    key_value = ec2.create_key_pair(KeyName='hej')
+    key_value = ec2.create_key_pair(KeyName='flask')
     print('Key pair named ' + key_value['KeyName']+' created')
+    temp.write(key_value['KeyMaterial'])
+    temp.close()
     return key_value['KeyName']
 
 # Creating 5 t2.large ec2 instances
 
 
 def create_t2_instances(sg_id, keyname):
-    instances = ec2.create_instances(
+    ec2.create_instances(
         ImageId="ami-08c40ec9ead489470",
         MinCount=1,
         MaxCount=5,
@@ -24,13 +28,13 @@ def create_t2_instances(sg_id, keyname):
         KeyName=keyname,
         SecurityGroupIds=[sg_id],
         Placement={'AvailabilityZone': 'us-east-1a'})
-    print('T2.large instances created')
+    print('t2.large instances created')
 
 # Creating 4 m4.large instances
 
 
 def create_m4_instances(sg_id, keyname):
-    instances = ec2.create_instances(
+    ec2.create_instances(
         ImageId="ami-08c40ec9ead489470",
         MinCount=1,
         MaxCount=4,
@@ -39,7 +43,7 @@ def create_m4_instances(sg_id, keyname):
         SecurityGroupIds=[sg_id],
         Placement={
             'AvailabilityZone': 'us-east-1b'})
-    print('M4.large instances created')
+    print('m4.large instances created')
 
 # Creates a security group
 
