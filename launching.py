@@ -3,14 +3,14 @@ from botocore.exceptions import ClientError
 temp = open("temp.txt", "w")
 
 
-ec2 = boto3.resource('ec2')
+ec2_RESSOURCE = boto3.resource('ec2', region_name='us-east-1')
+ec2_CLIENT = boto3.client('ec2')
 
 # Creating a key pair, should be modified to save the key_pair locally
 
 
 def create_key_pair():
-    ec2 = boto3.client('ec2')
-    key_value = ec2.create_key_pair(KeyName='flask')
+    key_value = ec2_CLIENT.create_key_pair(KeyName='flask')
     print('Key pair named ' + key_value['KeyName']+' created')
     temp.write(key_value['KeyMaterial'])
     temp.close()
@@ -20,7 +20,7 @@ def create_key_pair():
 
 
 def create_t2_instances(sg_id, keyname):
-    ec2.create_instances(
+    ec2_RESSOURCE.create_instances(
         ImageId="ami-08c40ec9ead489470",
         MinCount=1,
         MaxCount=5,
@@ -34,7 +34,7 @@ def create_t2_instances(sg_id, keyname):
 
 
 def create_m4_instances(sg_id, keyname):
-    ec2.create_instances(
+    ec2_RESSOURCE.create_instances(
         ImageId="ami-08c40ec9ead489470",
         MinCount=1,
         MaxCount=4,
@@ -49,14 +49,30 @@ def create_m4_instances(sg_id, keyname):
 
 
 def create_security_group():
-    ec2 = boto3.client('ec2')
-    response = ec2.describe_vpcs()
+    response = ec2_CLIENT.describe_vpcs()
     vpc_id = response.get('Vpcs', [{}])[0].get('VpcId', '')
     try:
-        response = ec2.create_security_group(GroupName='Security Group',
+        security_group = ec2_RESSOURCE.create_security_group(GroupName='Security Group',
                                              Description='None',
-                                             VpcId=vpc_id)
-        security_group_id = response['GroupId']
+                                             VpcId=vpc_id,
+                                             )
+        security_group_id = security_group.group_id
+        security_group.authorize_ingress(
+            DryRun=False,
+            IpPermissions=[
+                {
+                    'FromPort': 0,
+                    'ToPort': 65535,
+                    'IpProtocol': '-1',
+                    'IpRanges': [
+                        {
+                            'CidrIp': '0.0.0.0/0',
+                            'Description': "Flask_authorize"
+                        },
+                    ]
+                }
+            ]
+        )
         print('Security Group Created %s in vpc %s.' %
               (security_group_id, vpc_id))
         print(security_group_id)

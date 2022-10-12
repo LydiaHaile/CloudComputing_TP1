@@ -15,8 +15,15 @@ print(ec2.terminate_instances(InstanceIds=(newlist)))
 
 # Delete security group
 try:
-    response = ec2.delete_security_group(GroupName='Security Group')
-    print('Security Group Deleted', response)
+
+    security_groups_dict = ec2.describe_security_groups()
+    security_groups = security_groups_dict['SecurityGroups']
+    L=[]
+    for groupobj in security_groups:
+        L.append(groupobj['GroupId'])
+    for elm in L:
+        response = ec2.delete_security_group(GroupId=elm)
+        print('Security Group Deleted', response)
 except ClientError as e:
     print(e)
 
