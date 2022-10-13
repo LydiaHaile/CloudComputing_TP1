@@ -15,12 +15,12 @@ print(ec2.terminate_instances(InstanceIds=(newlist)))
 
 # Delete security group
 try:
-
     security_groups_dict = ec2.describe_security_groups()
     security_groups = security_groups_dict['SecurityGroups']
     L=[]
     for groupobj in security_groups:
-        L.append(groupobj['GroupId'])
+        if groupobj['GroupName']!='default':
+            L.append(groupobj['GroupId'])
     for elm in L:
         response = ec2.delete_security_group(GroupId=elm)
         print('Security Group Deleted', response)
@@ -33,4 +33,7 @@ ec2 = boto3.client('ec2')
 response = ec2.delete_key_pair(KeyName='flask')
 print(response)
 
-os.remove("temp.txt") 
+try:
+    os.remove("temp.txt")
+except OSError:
+    pass
