@@ -1,6 +1,5 @@
 import boto3
 from botocore.exceptions import ClientError
-temp = open("temp.txt", "w")
 
 
 ec2_RESSOURCE = boto3.resource('ec2', region_name='us-east-1')
@@ -9,31 +8,59 @@ ec2_CLIENT = boto3.client('ec2')
 # Creating 5 t2.large ec2 instances
 
 
-def create_t2_instances(sg_id, keyname):
-    ec2_RESSOURCE.create_instances(
-        ImageId="ami-08c40ec9ead489470",
-        MinCount=1,
-        MaxCount=5,
-        InstanceType="t2.large",
-        KeyName="vockey",
-        SecurityGroupIds=[sg_id],
-        Placement={'AvailabilityZone': 'us-east-1a'})
+def create_t2_instances(sg_id):
+    Instances=[]
+    for i in range(1,6):
+        Instances+=ec2_RESSOURCE.create_instances(
+            ImageId="ami-08c40ec9ead489470",
+            InstanceType="t2.large",
+            KeyName="vockey",
+            MinCount=1,
+            MaxCount=1,
+            TagSpecifications=[
+                {
+                    'ResourceType': 'instance',
+                    'Tags': [
+                        {
+                            'Key': 'Name',
+                            'Value':  'flask_t2_large_'+str(i)
+                        },
+                    ]
+                },
+            ],
+            SecurityGroupIds=[sg_id],
+            Placement={'AvailabilityZone': 'us-east-1a'})
     print('t2.large instances created')
+    return Instances
 
 # Creating 4 m4.large instances
 
 
-def create_m4_instances(sg_id, keyname):
-    ec2_RESSOURCE.create_instances(
-        ImageId="ami-08c40ec9ead489470",
-        MinCount=1,
-        MaxCount=4,
-        InstanceType="m4.large",
-        KeyName="vockey",
-        SecurityGroupIds=[sg_id],
-        Placement={
-            'AvailabilityZone': 'us-east-1b'})
+def create_m4_instances(sg_id):
+    Instances=[]
+    for i in range(6,10):
+        Instances+=ec2_RESSOURCE.create_instances(
+            ImageId="ami-08c40ec9ead489470",
+            InstanceType="m4.large",
+            KeyName="vockey",
+            MinCount=1,
+            MaxCount=1,
+            TagSpecifications=[
+                {
+                    'ResourceType': 'instance',
+                    'Tags': [
+                        {
+                            'Key': 'Name',
+                            'Value':  'flask_m4_large_'+str(i)
+                        },
+                    ]
+                },
+            ],
+            SecurityGroupIds=[sg_id],
+            Placement={
+                'AvailabilityZone': 'us-east-1b'})
     print('m4.large instances created')
+    return Instances
 
 # Creates a security group
 
@@ -107,8 +134,23 @@ def create_security_group():
 
 def launch_all_instances():
     security_group_id = create_security_group()
-    create_t2_instances(security_group_id)
-    create_m4_instances(security_group_id)
+    Instances_t2=create_t2_instances(security_group_id)
+    Instances_m4=create_m4_instances(security_group_id)
+    Instances=Instances_t2+Instances_m4
+    temp=""
+    for instance in Instances:
+        instance.wait_until_running()
+        # Reload the instance attributes
+        instance.load()
+        temp+=instance.public_dns_name+" "
+        print(instance.public_dns_name)
+        # Enable detailed monitoring
+        instance.monitor(
+        DryRun=False
+        )
+    dns_adress = open("dns_adress.txt", "w")
+    dns_adress.write(temp[:-1])
+    dns_adress.close()
     print('all done')
 
 
