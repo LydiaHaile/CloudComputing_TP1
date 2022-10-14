@@ -1,15 +1,29 @@
 value=$(<dns_adress.txt)
+number=1
 for str in ${value[@]}; do
-    ssh -i labsuser.pem ubuntu@$str
+    ssh -i labsuser.pem ubuntu@$str "sudo apt-get update ; sudo apt-get install python3-venv;
+
+    mkdir flask_app;
+    cd flask_app;
+    python3 -m venv venv;
+    source venv/bin/activate;
+    pip install Flask ;
+
+    instance_ip=$(ec2metadata --public-ipv4) && echo \"from flask import Flask
+    app = Flask(__name__)
+    @app.route('/')
+    def myFlaskApp():
+
+            return \"Instance number "$number" is responding now!\"
+
+    if __name__ == \"__main__\":
+            app.config.update(
+                    SERVER_NAME="\"$instance_ip\""
+            )
+            app.run(host='0.0.0.0', port=80) \" | sudo tee app.py ;
+
+    sudo env "PATH=$PATH" python app.py"
+    
+
+    number++
 done
-
-
-ssh -i labsuser.pem ubuntu@ec2-3-226-235-167.compute-1.amazonaws.com
-
-
-sudo apt-get update && sudo apt-get -y install python3-pip && sudo pip3 install flask &&
-mkdir flask_application && cd flask_application
-
-
-pip3 install Flask
-
