@@ -6,16 +6,6 @@ temp = open("temp.txt", "w")
 ec2_RESSOURCE = boto3.resource('ec2', region_name='us-east-1')
 ec2_CLIENT = boto3.client('ec2')
 
-# Creating a key pair, should be modified to save the key_pair locally
-
-
-def create_key_pair():
-    key_value = ec2_CLIENT.create_key_pair(KeyName='flask')
-    print('Key pair named ' + key_value['KeyName']+' created')
-    temp.write(key_value['KeyMaterial'])
-    temp.close()
-    return key_value['KeyName']
-
 # Creating 5 t2.large ec2 instances
 
 
@@ -25,7 +15,7 @@ def create_t2_instances(sg_id, keyname):
         MinCount=1,
         MaxCount=5,
         InstanceType="t2.large",
-        KeyName=keyname,
+        KeyName="vockey",
         SecurityGroupIds=[sg_id],
         Placement={'AvailabilityZone': 'us-east-1a'})
     print('t2.large instances created')
@@ -39,7 +29,7 @@ def create_m4_instances(sg_id, keyname):
         MinCount=1,
         MaxCount=4,
         InstanceType="m4.large",
-        KeyName=keyname,
+        KeyName="vockey",
         SecurityGroupIds=[sg_id],
         Placement={
             'AvailabilityZone': 'us-east-1b'})
@@ -52,7 +42,7 @@ def create_security_group():
     response = ec2_CLIENT.describe_vpcs()
     vpc_id = response.get('Vpcs', [{}])[0].get('VpcId', '')
     try:
-        security_group = ec2_RESSOURCE.create_security_group(GroupName='Security Group',
+        security_group = ec2_RESSOURCE.create_security_group(GroupName='security_group',
                                              Description='None',
                                              VpcId=vpc_id,
                                              )
@@ -61,9 +51,41 @@ def create_security_group():
             DryRun=False,
             IpPermissions=[
                 {
-                    'FromPort': 0,
-                    'ToPort': 65535,
-                    'IpProtocol': '-1',
+                    'FromPort': 22,
+                    'ToPort': 22,
+                    'IpProtocol': 'TCP',
+                    'IpRanges': [
+                        {
+                            'CidrIp': '0.0.0.0/0',
+                            'Description': "Flask_authorize"
+                        },
+                    ]
+                }
+            ]
+        )
+        security_group.authorize_ingress(
+            DryRun=False,
+            IpPermissions=[
+                {
+                    'FromPort': 80,
+                    'ToPort': 80,
+                    'IpProtocol': 'TCP',
+                    'IpRanges': [
+                        {
+                            'CidrIp': '0.0.0.0/0',
+                            'Description': "Flask_authorize"
+                        },
+                    ]
+                }
+            ]
+        )
+        security_group.authorize_ingress(
+            DryRun=False,
+            IpPermissions=[
+                {
+                    'FromPort': 443,
+                    'ToPort': 443,
+                    'IpProtocol': 'TCP',
                     'IpRanges': [
                         {
                             'CidrIp': '0.0.0.0/0',
@@ -84,10 +106,9 @@ def create_security_group():
 
 
 def launch_all_instances():
-    key_name = create_key_pair()
     security_group_id = create_security_group()
-    create_t2_instances(security_group_id, key_name)
-    create_m4_instances(security_group_id, key_name)
+    create_t2_instances(security_group_id)
+    create_m4_instances(security_group_id)
     print('all done')
 
 

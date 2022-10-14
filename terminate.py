@@ -10,7 +10,7 @@ newlist=[]
 for reservation in resp['Reservations']:
  for instance in reservation['Instances']:
          newlist.append(instance['InstanceId'])
-print(ec2.terminate_instances(InstanceIds=(newlist)))
+ec2.terminate_instances(InstanceIds=(newlist))
 
 
 # Delete security group
@@ -27,11 +27,8 @@ try:
 except ClientError as e:
     print(e)
 
-ec2 = boto3.client('ec2')
-
 
 response = ec2.delete_key_pair(KeyName='flask')
-print(response)
 
 try:
     os.remove("temp.txt")
