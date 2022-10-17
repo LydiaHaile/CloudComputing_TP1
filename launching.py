@@ -1,6 +1,7 @@
 import boto3
 from botocore.exceptions import ClientError
 import paramiko
+import time
 
 
 ec2_RESSOURCE = boto3.resource('ec2', region_name='us-east-1')
@@ -10,22 +11,30 @@ ec2_CLIENT = boto3.client('ec2')
 
 def create_user_data(instance_number):
     user_data = ['sudo apt-get update', 
-    'sudo apt-get install python3-venv',
+    'yes | sudo apt-get install python3-pip',
+    'export PATH="/home/ubuntu/.local/bin:$PATH"',
+    'sudo pip3 install Flask',
     'mkdir flask_application', 
     'cd flask_application',
-    'python3 -m venv venv',
-    'source venv/bin/activate',
-    'pip install Flask',
+#    'python3 -m venv venv',
+#    'source venv/bin/activate',
+#    'python3 -m pip3 install flask',
 #    'instance_ip=$(ec2metadata --public-ipv4)', 
-    '''echo "from flask import Flask
+    '''echo "import sys
+from flask import Flask
 app = Flask(__name__)
 @app.route('/')
 def myFlaskApp():
     return 'Instance number {} is responding now!'
-
+    
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=80) " | tee flask_app.py'''.format(instance_number),
-    'python3 flask_app.py']
+    app.config.update(
+        SERVER_NAME=str(sys.argv[1])
+    )
+    app.run(host='0.0.0.0', port=80) " | sudo tee app.py '''.format(instance_number),
+    'sudo nohup env "PATH=$PATH" python3 app.py $(ec2metadata --public-ipv4) &']
+#    'export FLASK_APP=flask_app.py',
+#    'flask --app flask_app.py run -h \'0.0.0.0\' -p 80']
     print(user_data)
     return user_data
 
@@ -174,24 +183,28 @@ def launch_all_instances():
         instance.monitor(
         DryRun=False
         )
+    print(temp_dns)
     #ip_address = open("ip_address.txt", "w")
     #ip_address.write(temp_ip[:-1])
     #ip_address.close()
     k = paramiko.RSAKey.from_private_key_file("labsuser.pem")
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    time.sleep(5)
     for i in range(9):
         print("connecting to ",temp_dns[i])
-
         c.connect( hostname = temp_dns[i], username = "ubuntu", pkey = k )
         print("connected")
         commands = create_user_data(i+1)
-        for command in commands:
+        for command in commands[:-1]:
             print("Executing {}".format( command ))
             stdin , stdout, stderr = c.exec_command(command)
             #print(stdin.read())
             print(stdout.read())
             print(stderr.read())
+        print("Executing {}".format( commands[-1] ))
+        stdin , stdout, stderr = c.exec_command(commands[-1])
+        print(temp_ip[i])
     c.close()
     print('all done')
 
