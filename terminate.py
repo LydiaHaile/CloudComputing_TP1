@@ -33,7 +33,7 @@ try:
                 'Values': [vpcid]
             }])['VpcEndpoints']:
         ec2_CLIENT.delete_vpc_endpoints(VpcEndpointIds=[ep['VpcEndpointId']])
-    time.sleep(20)
+    time.sleep(30)
     security_groups_dict = ec2_CLIENT.describe_security_groups()
     security_groups = security_groups_dict['SecurityGroups']
     L=[]
