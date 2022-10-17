@@ -146,7 +146,7 @@ def main():
         print("Executing {}".format( commands[-1] ))
         stdin , stdout, stderr = c.exec_command(commands[-1])
         print("Go to http://"+str(IP_addresses[i]))
-
+    time.sleep(5)
     c.close()
     print('Launching complete')
 
