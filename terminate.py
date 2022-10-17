@@ -1,11 +1,12 @@
 import boto3
-import os
 from botocore.exceptions import ClientError
 
 ec2_RESSOURCE = boto3.resource('ec2')
 ec2_CLIENT = boto3.client('ec2')
 
+# Delete all instances
 resp = ec2_CLIENT.describe_instances()
+# Lists the id of all instances
 newlist=[]
 for reservation in resp['Reservations']:
     for instance in reservation['Instances']:
@@ -32,12 +33,11 @@ try:
             }])['VpcEndpoints']:
         ec2_CLIENT.delete_vpc_endpoints(VpcEndpointIds=[ep['VpcEndpointId']])
     
-
-
     security_groups_dict = ec2_CLIENT.describe_security_groups()
     security_groups = security_groups_dict['SecurityGroups']
     L=[]
     for groupobj in security_groups:
+        # We don't want to remove the default security group
         if groupobj['GroupName']!='default':
             L.append(groupobj['GroupId'])
     for elm in L:
@@ -45,9 +45,3 @@ try:
         print('Security Group Deleted', response)
 except ClientError as e:
     print(e)
-
-import os
-if os.path.exists("dns_adress.txt"):
-  os.remove("dns_adress.txt")
-else:
-  print("The file does not exist") 
