@@ -80,3 +80,50 @@ def connect_instances_to_target():
 # use create_listernes() to connect target groups to the load balancer
 # can be found in boto3 docs
 # remove hard coding, then it should be all set
+
+
+def setup_listeners():
+    listener = elb.create_listener(
+        LoadBalancerArn='arn:aws:elasticloadbalancing:us-east-1:985144913653:loadbalancer/app/firstelb/af9c82ac155c40d1',
+        Protocol='HTTP',
+        Port=80,
+        DefaultActions=[
+            {
+                'Type': 'forward',
+                'TargetGroupArn': 'arn:aws:elasticloadbalancing:us-east-1:985144913653:targetgroup/cluster1/7830b04465887e0f'}]
+    )
+    # forwards to cluster1 arn
+    rule1 = elb.create_rule(
+        ListenerArn=listener["Listeners"][0]["ListenerArn"],
+        Conditions=[
+            {
+                'Field': 'path-pattern',
+                'Values': [
+                    '/cluster1/*',
+                ]}],
+        Priority=1,
+        Actions=[
+            {
+                'Type': 'forward',
+                'TargetGroupArn': 'arn:aws:elasticloadbalancing:us-east-1:985144913653:targetgroup/cluster1/7830b04465887e0f'
+            }]
+    )
+    # forwards to cluster2 to arn
+    rule2 = elb.create_rule(
+        ListenerArn=listener["Listeners"][0]["ListenerArn"],
+        Conditions=[
+            {
+                'Field': 'path-pattern',
+                'Values': [
+                    '/cluster2/*',
+                ]}],
+        Priority=2,
+        Actions=[
+            {
+                'Type': 'forward',
+                'TargetGroupArn': 'arn:aws:elasticloadbalancing:us-east-1:985144913653:targetgroup/cluster2/2a83080f40af2c2e'
+            }]
+    )
+
+
+setup_listeners()
