@@ -6,12 +6,12 @@ import time
 
 ec2_RESSOURCE = boto3.resource('ec2', region_name='us-east-1')
 ec2_CLIENT = boto3.client('ec2')
+elb = boto3.client('elbv2')
+
 
 # Creates a security group with 3 inbound rules allowing TCP traffic through custom ports
-def create_security_group(ports):
+def create_security_group(vpc_id, ports):
     # We will create a security group in the existing VPC
-    response = ec2_CLIENT.describe_vpcs()
-    vpc_id = response.get('Vpcs', [{}])[0].get('VpcId', '')
     try:
         security_group = ec2_RESSOURCE.create_security_group(GroupName='security_group',
                                              Description='Flask_Security_Group',
@@ -97,18 +97,85 @@ if __name__ == '__main__':
     'sudo nohup env "PATH=$PATH" python3 app.py $(ec2metadata --public-ipv4) &']
     return commands
 
+def create_target_groups():
+    response = ec2_CLIENT.describe_vpcs()
+    vpc_id = response.get('Vpcs', [{}])[0].get('VpcId', '')
+    cluster1 = elb.create_target_group(
+        Name='cluster1',
+        Protocol='HTTP',
+        Port=80,
+        VpcId=vpc_id,
+        TargetType='instance',
+        IpAddressType='ipv4')
+    cluster2 = elb.create_target_group(
+        Name='cluster2',
+        Protocol='HTTP',
+        Port=80,
+        VpcId=vpc_id,
+        TargetType='instance',
+        IpAddressType='ipv4')
+    cluster1_arn = cluster1["TargetGroups"][0]["TargetGroupArn"]
+    cluster2_arn = cluster2["TargetGroups"][0]["TargetGroupArn"]
+    return cluster1_arn, cluster2_arn
+
+# lots of hardcoding
+
+
+def create_load_balancer(security_group_id, subnets):
+    response = elb.create_load_balancer(
+        Name='firstelb',
+        Subnets=subnets,
+        SecurityGroups=[
+            security_group_id,
+        ],
+        Scheme='internet-facing',
+        Type='application',
+        IpAddressType='ipv4'
+    )
+    return response
+
+# need to pass the intances ids
+
+
+def connect_instances_to_target(target_cluster_1, target_cluster_2):
+    cluster1_arn, cluster2_arn = create_target_groups()
+    # cluster1 instances ids []
+    # cluster2 instances ids []
+    cluster_1 = elb.register_targets(
+        TargetGroupArn=cluster1_arn,
+        Targets=target_cluster_1,
+    )
+    cluster_2 = elb.register_targets(
+        TargetGroupArn=cluster2_arn,
+        Targets=target_cluster_2,
+    )
+    return cluster_1, cluster_2
+
+
+# use create_listernes() to connect target groups to the load balancer
+# can be found in boto3 docs
+# remove hard coding, then it should be all set
 
 def main():
+    response = ec2_CLIENT.describe_vpcs()
+    vpc_id = response.get('Vpcs', [{}])[0].get('VpcId', '')
+    
     # Launches custom security group
-    security_group_id = create_security_group([22, 80, 443])
+    security_group_id = create_security_group(vpc_id, [22, 80, 443])
 
     # Launches all instances
     Instances_t2=create_instance(1,5,"t2.large","vockey","flask_t2_large_",security_group_id,"us-east-1a")
     Instances_m4=create_instance(6,9,"m4.large","vockey","flask_m4_large_",security_group_id,"us-east-1b")
 
+
+    t2_IDs = [{'Id':instance.instance_id} for instance in Instances_t2]
+    m4_IDs = [{'Id':instance.instance_id} for instance in Instances_m4]
+
     Instances=Instances_t2+Instances_m4
     DNS_addresses=[]
     IP_addresses=[]
+
+
     for instance in Instances:
         instance.wait_until_running()
         # Reload the instance attributes
@@ -121,6 +188,16 @@ def main():
         instance.monitor(
             DryRun=False
         )
+
+    subnets = list(ec2_RESSOURCE.subnets.filter(
+        Filters=[{"Name": "vpc-id", "Values": [vpc_id]},{"Name": "availabilityZone", "Values": ["us-east-1a", "us-east-1b"]}]
+    ))
+    subnet_ids = [sn.id for sn in subnets]
+    
+    elb = create_load_balancer(security_group_id, subnet_ids)
+    print(elb)
+    cluster_1, cluster_2 = connect_instances_to_target(t2_IDs, m4_IDs)
+    print(cluster_1, cluster_2)
 
     # Configure SSH connection to AWS
     k = paramiko.RSAKey.from_private_key_file("labsuser.pem")
