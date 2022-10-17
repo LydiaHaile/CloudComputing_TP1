@@ -20,21 +20,37 @@ def create_security_group(vpc_id, ports):
         security_group_id = security_group.group_id
         for port in ports: # In our use case, ports = [22, 80, 443]
             security_group.authorize_ingress(
-            DryRun=False,
-            IpPermissions=[
-                {
-                    'FromPort': port,
-                    'ToPort': port,
-                    'IpProtocol': 'TCP',
-                    'IpRanges': [
-                        {
-                            'CidrIp': '0.0.0.0/0',
-                            'Description': "Flask_authorize"
-                        },
-                    ]
-                }
-            ]
-        )
+                DryRun=False,
+                IpPermissions=[
+                    {
+                        'FromPort': port,
+                        'ToPort': port,
+                        'IpProtocol': 'TCP',
+                        'IpRanges': [
+                            {
+                                'CidrIp': '0.0.0.0/0',
+                                'Description': "Flask_authorize"
+                            },
+                        ]
+                    }
+                ]
+            )
+            ec2_CLIENT.authorize_security_group_egress(
+                GroupId=security_group_id,
+                IpPermissions=[
+                    {
+                        'FromPort': port,
+                        'ToPort': port,
+                        'IpProtocol': 'TCP',
+                        'IpRanges': [
+                            {
+                                'CidrIp': '0.0.0.0/0',
+                                'Description': "Flask_authorize"
+                            },
+                        ]
+                    }
+                ]
+            )
         print('Security Group Created %s in vpc %s.' %
               (security_group_id, vpc_id))
         return security_group_id
@@ -189,6 +205,7 @@ def create_elb_target_groups_listeners_rules(security_group_id, vpc_id, target_c
     subnet_ids = [sn.id for sn in subnets]
 
     elb_created = create_load_balancer(security_group_id, subnet_ids)
+    print("ELB : ", elb_created)
     elb_arn = elb_created['LoadBalancers'][0]['LoadBalancerArn']
     cluster_1_arn, cluster_2_arn = create_target_groups()
     listener, rule_1, rule_2 = setup_listeners(elb_arn, cluster_1_arn, cluster_2_arn)
@@ -240,10 +257,7 @@ def main():
         instance.monitor(
             DryRun=False
         )
-
-    cluster_1, cluster_2 = create_elb_target_groups_listeners_rules(security_group_id, vpc_id, m4_IDs, t2_IDs)
-    print(cluster_1, cluster_2)
-
+    
     # Configure SSH connection to AWS
     k = paramiko.RSAKey.from_private_key_file("labsuser.pem")
     c = paramiko.SSHClient()
@@ -270,6 +284,10 @@ def main():
         print("Go to http://"+str(IP_addresses[i]))
     time.sleep(5)
     c.close()
+
+    cluster_1, cluster_2 = create_elb_target_groups_listeners_rules(security_group_id, vpc_id, m4_IDs, t2_IDs)
+    print(cluster_1, cluster_2)
+
     print('Launching complete')
 
 
