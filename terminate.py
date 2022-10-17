@@ -4,6 +4,8 @@ import time
 
 ec2_RESSOURCE = boto3.resource('ec2')
 ec2_CLIENT = boto3.client('ec2')
+elb = boto3.client('elbv2')
+
 
 # Delete all instances
 resp = ec2_CLIENT.describe_instances()
@@ -33,7 +35,17 @@ try:
                 'Values': [vpcid]
             }])['VpcEndpoints']:
         ec2_CLIENT.delete_vpc_endpoints(VpcEndpointIds=[ep['VpcEndpointId']])
-    time.sleep(30)
+except ClientError as e:
+    print(e)
+try:
+    elastic_load_balancer = elb.describe_load_balancers()
+    if len(elastic_load_balancer['LoadBalancers']) > 0:
+        response = elb.delete_load_balancer(LoadBalancerArn=elastic_load_balancer['LoadBalancers'][0]['LoadBalancerArn'])
+        print('Elastic Load Balancer Deleted', response)
+except ClientError as e:
+    print(e)
+time.sleep(40)
+try:
     security_groups_dict = ec2_CLIENT.describe_security_groups()
     security_groups = security_groups_dict['SecurityGroups']
     L=[]

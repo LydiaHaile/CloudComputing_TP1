@@ -137,20 +137,72 @@ def create_load_balancer(security_group_id, subnets):
 # need to pass the intances ids
 
 
-def connect_instances_to_target(target_cluster_1, target_cluster_2):
-    cluster1_arn, cluster2_arn = create_target_groups()
-    # cluster1 instances ids []
-    # cluster2 instances ids []
+
+def setup_listeners(elb_arn, cluster_1_arn, cluster_2_arn):
+    listener = elb.create_listener(
+        LoadBalancerArn=elb_arn,
+        Protocol='HTTP',
+        Port=80,
+        DefaultActions=[
+            {
+                'Type': 'forward',
+                'TargetGroupArn': cluster_1_arn}]
+    )
+    # forwards to cluster1 arn
+    rule1 = elb.create_rule(
+        ListenerArn=listener["Listeners"][0]["ListenerArn"],
+        Conditions=[
+            {
+                'Field': 'path-pattern',
+                'Values': [
+                    '/cluster1/*',
+                ]}],
+        Priority=1,
+        Actions=[
+            {
+                'Type': 'forward',
+                'TargetGroupArn': cluster_1_arn
+            }]
+    )
+    # forwards to cluster2 to arn
+    rule2 = elb.create_rule(
+        ListenerArn=listener["Listeners"][0]["ListenerArn"],
+        Conditions=[
+            {
+                'Field': 'path-pattern',
+                'Values': [
+                    '/cluster2/*',
+                ]}],
+        Priority=2,
+        Actions=[
+            {
+                'Type': 'forward',
+                'TargetGroupArn': cluster_2_arn
+            }]
+    )
+    return listener, rule1, rule2
+
+def create_elb_target_groups_listeners_rules(security_group_id, vpc_id, target_cluster_1, target_cluster_2):
+    subnets = list(ec2_RESSOURCE.subnets.filter(
+        Filters=[{"Name": "vpc-id", "Values": [vpc_id]},{"Name": "availabilityZone", "Values": ["us-east-1a", "us-east-1b"]}]
+    ))
+    subnet_ids = [sn.id for sn in subnets]
+
+    elb_created = create_load_balancer(security_group_id, subnet_ids)
+    elb_arn = elb_created['LoadBalancers'][0]['LoadBalancerArn']
+    cluster_1_arn, cluster_2_arn = create_target_groups()
+    listener, rule_1, rule_2 = setup_listeners(elb_arn, cluster_1_arn, cluster_2_arn)
+    print(listener, rule_1, rule_2)
+    
     cluster_1 = elb.register_targets(
-        TargetGroupArn=cluster1_arn,
+        TargetGroupArn=cluster_1_arn,
         Targets=target_cluster_1,
     )
     cluster_2 = elb.register_targets(
-        TargetGroupArn=cluster2_arn,
+        TargetGroupArn=cluster_2_arn,
         Targets=target_cluster_2,
     )
     return cluster_1, cluster_2
-
 
 # use create_listernes() to connect target groups to the load balancer
 # can be found in boto3 docs
@@ -189,14 +241,7 @@ def main():
             DryRun=False
         )
 
-    subnets = list(ec2_RESSOURCE.subnets.filter(
-        Filters=[{"Name": "vpc-id", "Values": [vpc_id]},{"Name": "availabilityZone", "Values": ["us-east-1a", "us-east-1b"]}]
-    ))
-    subnet_ids = [sn.id for sn in subnets]
-    
-    elb = create_load_balancer(security_group_id, subnet_ids)
-    print(elb)
-    cluster_1, cluster_2 = connect_instances_to_target(t2_IDs, m4_IDs)
+    cluster_1, cluster_2 = create_elb_target_groups_listeners_rules(security_group_id, vpc_id, m4_IDs, t2_IDs)
     print(cluster_1, cluster_2)
 
     # Configure SSH connection to AWS
