@@ -2,6 +2,8 @@ import boto3
 from botocore.exceptions import ClientError
 import paramiko
 import time
+import json
+import requests
 
 
 ec2_RESSOURCE = boto3.resource('ec2', region_name='us-east-1')
@@ -86,7 +88,7 @@ def create_instance(id_min,id_max,instance_type,keyname,name,security_id,availab
 
 
 
-def create_commands(instance_number):
+def create_commands(cluster_number,instance_number):
     ### stores in a list the set of commands needed to deploy Flask on an instance
     commands = ['sudo apt-get update', 
     'yes | sudo apt-get install python3-pip',
@@ -99,12 +101,12 @@ def create_commands(instance_number):
     '''echo "import sys
 from flask import Flask
 app = Flask(__name__)
-@app.route('/')
+@app.route('/{}')
 def myFlaskApp():
     return 'Instance number {} is responding now!'
     
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=80) " | sudo tee app.py '''.format(instance_number),
+    app.run(host='0.0.0.0', port=80) " | sudo tee app.py '''.format(cluster_number,instance_number),
     # nohup is used to keep the application running
     # the argument is the public IPV4 address of the instance, used to define the server name 
     'sudo nohup env "PATH=$PATH" python3 app.py &']
@@ -164,11 +166,7 @@ def setup_listeners(elb_arn, cluster_1_arn, cluster_2_arn):
     rule1 = elb.create_rule(
         ListenerArn=listener["Listeners"][0]["ListenerArn"],
         Conditions=[
-            {
-                'Field': 'path-pattern',
-                'Values': [
-                    '/cluster1/*',
-                ]}],
+            {"Field": "path-pattern", "PathPatternConfig": {"Values": ["/cluster1"]}}],
         Priority=1,
         Actions=[
             {
@@ -180,11 +178,7 @@ def setup_listeners(elb_arn, cluster_1_arn, cluster_2_arn):
     rule2 = elb.create_rule(
         ListenerArn=listener["Listeners"][0]["ListenerArn"],
         Conditions=[
-            {
-                'Field': 'path-pattern',
-                'Values': [
-                    '/cluster2/*',
-                ]}],
+            {"Field": "path-pattern", "PathPatternConfig": {"Values": ["/cluster2"]}}],
         Priority=2,
         Actions=[
             {
@@ -215,11 +209,13 @@ def create_elb_target_groups_listeners_rules(security_group_id, vpc_id, target_c
         TargetGroupArn=cluster_2_arn,
         Targets=target_cluster_2,
     )
-    return cluster_1, cluster_2
+    return elb_created, cluster_1, cluster_2
 
-# use create_listernes() to connect target groups to the load balancer
-# can be found in boto3 docs
-# remove hard coding, then it should be all set
+def call_endpoint_http(elb_dns,cluster_str):
+    url = "http://"+elb_dns+cluster_str
+    headers = {'content-type': 'application/json'}
+    r = requests.get(url, headers=headers)
+    print(r.status_code)
 
 def main():
     response = ec2_CLIENT.describe_vpcs()
@@ -236,11 +232,81 @@ def main():
     t2_IDs = [{'Id':instance.instance_id} for instance in Instances_t2]
     m4_IDs = [{'Id':instance.instance_id} for instance in Instances_m4]
 
-    Instances=Instances_t2+Instances_m4
-    DNS_addresses=[]
-    IP_addresses=[]
+    DNS_addresses_t2=[]
+    IP_addresses_t2=[]
+
+    for instance in Instances_t2:
+        instance.wait_until_running()
+        # Reload the instance attributes
+        instance.load()
+        DNS_addresses_t2.append(instance.public_dns_name)
+        IP_addresses_t2.append(instance.public_ip_address)
+        print("DNS = ",instance.public_dns_name)
+        print("IPV4 = ",instance.public_ip_address)
+        # Enable detailed monitoring
+        instance.monitor(
+            DryRun=False
+        )
+
+    DNS_addresses_m4=[]
+    IP_addresses_m4=[]
+
+    for instance in Instances_m4:
+        instance.wait_until_running()
+        # Reload the instance attributes
+        instance.load()
+        DNS_addresses_m4.append(instance.public_dns_name)
+        IP_addresses_m4.append(instance.public_ip_address)
+        print("DNS = ",instance.public_dns_name)
+        print("IPV4 = ",instance.public_ip_address)
+        # Enable detailed monitoring
+        instance.monitor(
+            DryRun=False
+        )
+        
+    # Configure SSH connection to AWS
+    k = paramiko.RSAKey.from_private_key_file("labsuser.pem")
+    c = paramiko.SSHClient()
+    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # wait to make sure connection will be possible
+    time.sleep(10)
+
+    for i in range(4):
+        print("Connecting to ", DNS_addresses_m4[i])
+        c.connect( hostname = DNS_addresses_m4[i], username = "ubuntu", pkey = k )
+        print("Connected")
+        commands = create_commands("cluster1",i+1)
+ 
+        for command in commands[:-1]:
+            print("Executing {}".format( command ))
+            stdin , stdout, stderr = c.exec_command(command)
+            print(stdout.read())
+            print(stderr.read())
+        
+        # The last command to be executed does not send anything to stdout, so we don't read it not to be stuck
+        print("Executing {}".format( commands[-1] ))
+        stdin , stdout, stderr = c.exec_command(commands[-1])
+        print("Go to http://"+str(IP_addresses_m4[i]))
 
 
+    for i in range(5):
+        print("Connecting to ", DNS_addresses_t2[i])
+        c.connect( hostname = DNS_addresses_t2[i], username = "ubuntu", pkey = k )
+        print("Connected")
+        commands = create_commands("cluster2",5+i)
+ 
+        for command in commands[:-1]:
+            print("Executing {}".format( command ))
+            stdin , stdout, stderr = c.exec_command(command)
+            print(stdout.read())
+            print(stderr.read())
+        
+        # The last command to be executed does not send anything to stdout, so we don't read it not to be stuck
+        print("Executing {}".format( commands[-1] ))
+        stdin , stdout, stderr = c.exec_command(commands[-1])
+        print("Go to http://"+str(IP_addresses_t2[i]))
+
+    '''
     for instance in Instances:
         instance.wait_until_running()
         # Reload the instance attributes
@@ -253,20 +319,14 @@ def main():
         instance.monitor(
             DryRun=False
         )
-    
-    # Configure SSH connection to AWS
-    k = paramiko.RSAKey.from_private_key_file("labsuser.pem")
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    # wait to make sure connection will be possible
-    time.sleep(5)
 
+    
     # Loop through the instances
     for i in range(9):
         print("Connecting to ", DNS_addresses[i])
         c.connect( hostname = DNS_addresses[i], username = "ubuntu", pkey = k )
         print("Connected")
-        commands = create_commands(i+1)
+        commands = create_commands("cluster1",i+1)
  
         for command in commands[:-1]:
             print("Executing {}".format( command ))
@@ -278,13 +338,22 @@ def main():
         print("Executing {}".format( commands[-1] ))
         stdin , stdout, stderr = c.exec_command(commands[-1])
         print("Go to http://"+str(IP_addresses[i]))
+    '''
     time.sleep(5)
     c.close()
 
-    cluster_1, cluster_2 = create_elb_target_groups_listeners_rules(security_group_id, vpc_id, m4_IDs, t2_IDs)
+    elb_created, cluster_1, cluster_2 = create_elb_target_groups_listeners_rules(security_group_id, vpc_id, m4_IDs, t2_IDs)
     #print(cluster_1, cluster_2)
-
+    
     print('Launching complete')
 
+    waiter = elb.get_waiter('load_balancer_available')
+    print("Waiting for ELB to run")
+
+    waiter.wait(LoadBalancerArns=[elb_created['LoadBalancers'][0]['LoadBalancerArn']])
+
+    print("ELB runs")
+    #for i in range(1000):
+    #    call_endpoint_http(elb_created['LoadBalancers'][0]['DNSName'],"/cluster1")
 
 main()
