@@ -4,11 +4,14 @@ import paramiko
 import time
 import json
 import requests
+import threading
+import datetime
 
 
 ec2_RESSOURCE = boto3.resource('ec2', region_name='us-east-1')
 ec2_CLIENT = boto3.client('ec2')
 elb = boto3.client('elbv2')
+cloudwatch = boto3.client('cloudwatch')
 
 
 # Creates a security group with 3 inbound rules allowing TCP traffic through custom ports
@@ -215,7 +218,22 @@ def call_endpoint_http(elb_dns,cluster_str):
     url = "http://"+elb_dns+cluster_str
     headers = {'content-type': 'application/json'}
     r = requests.get(url, headers=headers)
-    print(r.status_code)
+
+def test_1(elb_created):
+    for i in range(1000):
+        call_endpoint_http(elb_created['LoadBalancers'][0]['DNSName'],"/cluster1")
+        call_endpoint_http(elb_created['LoadBalancers'][0]['DNSName'],"/cluster2")
+
+def test_2(elb_created):
+    for _ in range(500):
+        call_endpoint_http(elb_created['LoadBalancers'][0]['DNSName'],"/cluster1")
+        call_endpoint_http(elb_created['LoadBalancers'][0]['DNSName'],"/cluster2")
+
+    time.sleep(60)
+
+    for _ in range(1000):
+        call_endpoint_http(elb_created['LoadBalancers'][0]['DNSName'],"/cluster1")
+        call_endpoint_http(elb_created['LoadBalancers'][0]['DNSName'],"/cluster2")
 
 def main():
     response = ec2_CLIENT.describe_vpcs()
@@ -353,7 +371,37 @@ def main():
     waiter.wait(LoadBalancerArns=[elb_created['LoadBalancers'][0]['LoadBalancerArn']])
 
     print("ELB runs")
-    #for i in range(1000):
-    #    call_endpoint_http(elb_created['LoadBalancers'][0]['DNSName'],"/cluster1")
+    test_scenario_1 = threading.Thread(target=test_1, args=(elb_created,))
+    test_scenario_2 = threading.Thread(target=test_2, args=(elb_created,))
+
+    test_scenario_1.start()
+    test_scenario_2.start()
+
+    test_scenario_1.join()
+    test_scenario_2.join()
+    response = cloudwatch.get_metric_data(
+        MetricDataQueries=[
+            {
+                'Id': 'test',
+                'MetricStat': {
+                    'Metric': {
+                        'Namespace': 'AWS/ApplicationELB',
+                        'MetricName': 'RequestCount',
+                        'Dimensions': [
+                            {
+                                    'Name': "LoadBalancer",
+                                    'Value': 'firstelb',
+                                },
+                        ]
+                    },
+                    'Period': 60,
+                    'Stat': 'Sum'
+                    },
+            },
+        ],
+        StartTime=datetime.datetime.utcnow() - datetime.timedelta(minutes=30),
+        EndTime=datetime.datetime.utcnow()
+    )
+    print(response)
 
 main()
