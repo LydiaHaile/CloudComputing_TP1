@@ -104,13 +104,10 @@ def myFlaskApp():
     return 'Instance number {} is responding now!'
     
 if __name__ == '__main__':
-    app.config.update(
-        SERVER_NAME=str(sys.argv[1])
-    )
     app.run(host='0.0.0.0', port=80) " | sudo tee app.py '''.format(instance_number),
     # nohup is used to keep the application running
     # the argument is the public IPV4 address of the instance, used to define the server name 
-    'sudo nohup env "PATH=$PATH" python3 app.py $(ec2metadata --public-ipv4) &']
+    'sudo nohup env "PATH=$PATH" python3 app.py &']
     return commands
 
 def create_target_groups():
@@ -132,6 +129,7 @@ def create_target_groups():
         IpAddressType='ipv4')
     cluster1_arn = cluster1["TargetGroups"][0]["TargetGroupArn"]
     cluster2_arn = cluster2["TargetGroups"][0]["TargetGroupArn"]
+    print(cluster1, cluster2)
     return cluster1_arn, cluster2_arn
 
 # lots of hardcoding
@@ -151,8 +149,6 @@ def create_load_balancer(security_group_id, subnets):
     return response
 
 # need to pass the intances ids
-
-
 
 def setup_listeners(elb_arn, cluster_1_arn, cluster_2_arn):
     listener = elb.create_listener(
@@ -286,7 +282,7 @@ def main():
     c.close()
 
     cluster_1, cluster_2 = create_elb_target_groups_listeners_rules(security_group_id, vpc_id, m4_IDs, t2_IDs)
-    print(cluster_1, cluster_2)
+    #print(cluster_1, cluster_2)
 
     print('Launching complete')
 
